@@ -1,0 +1,163 @@
+---
+title: "Assignment 2. Mastering data wrangling and visuals"
+author: "Mathilde Diekema"
+date: "10/14/2021"
+output: html_document
+---
+###################################
+# Ticket sales for a swimming pool
+###################################
+
+How can we use transaction data to test whether a difference in the daily volume of sales can be found between summer and winter time? 
+This case study uses the swim_work.csv dataset which can be found here: https://osf.io/jcxmk/. The data includes information on daily ticket sale of an outdoor swimming pool operating in Albuquerque (New Maxico, USA). The dataset has n = 2522 observations.
+
+https://osf.io/s3ng2/
+# Import libraries
+
+```{r}
+library(tidyverse)
+library(stargazer)
+library(Hmisc)
+library(timeDate)
+library(lubridate)
+library(dplyr)
+```
+
+##########################################
+# Creating time features 
+##########################################
+
+
+#import data
+
+```{r}
+daily_agg <- read.csv(file = paste("swim_work.csv", sep = ""))%>% 
+  mutate(date = as.Date(date))
+```
+
+```{r}
+# Day of Week (dow): 1 = Monday, 2 = Tuesday, 3 = Wednesday, 4 = Thursday, 5 = Friday, 6 = Saturday, 7 = Sunday
+# Wekend: Satuday and Sunday
+
+daily_agg <- daily_agg %>%
+  mutate(year = year(date),
+         quarter = quarter(date),
+         month = factor(month(date)),
+         day = day(date)) %>%
+  mutate(dow = factor(lubridate::wday(date, week_start = getOption("lubridate.week.start", 1))))
+```
+
+# Define var for graphs
+
+```{r}
+# named date vars for graphs
+mydays <- c("Mon","Tue","Wed",
+            "Thu","Fri","Sat",
+            "Sun")
+daily_agg$dow_abb   <-factor(   mydays[daily_agg$dow],  levels=mydays)
+daily_agg$month_abb <-factor(month.abb[daily_agg$month],levels=month.abb)
+```
+
+#################################
+# Descriptive graphs
+#################################
+
+```{r}
+color <- c("blue", "red", "green", "black")
+
+
+g1<-ggplot(data=daily_agg[(daily_agg$year>=2010) & (daily_agg$year<=2014),], aes(x=date, y=QUANTITY)) +
+  geom_line(size=0.2, color=color[1]) +
+  ggtitle("Annual fluctuations in ticket sale ") +
+  scale_x_date(breaks = as.Date(c("2010-01-01","2011-01-01","2012-01-01","2013-01-01","2014-01-01","2015-01-01")),
+               minor_breaks = "3 months") +
+  labs( x = "Date (day)", y="Daily ticket sales" ) +
+  scale_color_discrete(name = "")
+g1
+
+g2<-ggplot(data=daily_agg, aes(x=month_abb, y=QUANTITY)) +
+  ggtitle("Boxplots of ticket sales for each month") +
+  labs( x = "Date (month)", y="Daily ticket sales" ) +
+  geom_boxplot(color=color[1],outlier.color = color[4], outlier.alpha = 0.6, outlier.size = 0.4)
+g2
+
+
+g3<-ggplot(data=daily_agg, aes(x=dow_abb, y=QUANTITY)) +
+  ggtitle("Boxplots of ticket sales for each weekday") +
+  labs( x = "Day of the week", y="Daily ticket sales" ) +
+  geom_boxplot(color=color[1],outlier.color = color[4], outlier.alpha = 0.6, outlier.size = 0.4)
+  #geom_boxplot(color=color[1], outlier.shape = NA)
+g3
+```
+We can see that there seems to be a difference in ticket sale between winter and summer. Also sales seem to depend on weekday. We calculate the difference between winter and summer for all randomly sampled weekdays:
+
+
+#################################
+# T-test
+#################################
+```{r}
+#winter
+winter <- daily_agg %>% 
+  filter(quarter == c(1, 4)) %>%
+  select(dow, quarter, QUANTITY)
+
+#divided by weekday
+w_mon <- winter %>% filter(dow == 1)
+w_tue <- winter %>% filter(dow == 2)
+w_wed <- winter %>% filter(dow == 3)
+w_thu <- winter %>% filter(dow == 4)
+w_fri <- winter %>% filter(dow == 5)
+w_sat <- winter %>% filter(dow == 6)
+w_sun <- winter %>% filter(dow == 7)
+  
+#summer
+summer <- daily_agg %>% 
+  filter(quarter == c(2, 3)) %>%
+  select(dow, quarter, QUANTITY)
+
+#divided by weekday
+s_mon <- summer %>% filter(dow == 1)
+s_tue <- summer %>% filter(dow == 2)
+s_wed <- summer %>% filter(dow == 3)
+s_thu <- summer %>% filter(dow == 4)
+s_fri <- summer %>% filter(dow == 5)
+s_sat <- summer %>% filter(dow == 6)
+s_sun <- summer %>% filter(dow == 7)
+
+#Taking the minumum number of weekday 
+num_mon <- min(nrow(w_mon),nrow(s_mon))
+num_tue <- min(nrow(w_tue),nrow(s_tue))
+num_wed <- min(nrow(w_wed),nrow(s_wed))
+num_thu <- min(nrow(w_thu),nrow(s_thu))
+num_fri <- min(nrow(w_fri),nrow(s_fri))
+num_sat <- min(nrow(w_sat),nrow(s_sat))
+num_sun <- min(nrow(w_sun),nrow(s_sun))
+
+set.seed(0)
+# Randomly sampling within each weekday
+w_qua <- c(sample_n(w_mon, num_mon)$QUANTITY, sample_n(w_tue, num_tue)$QUANTITY, sample_n(w_wed, num_wed)$QUANTITY, sample_n(w_thu, num_thu)$QUANTITY, sample_n(w_fri, num_fri)$QUANTITY, sample_n(w_sat, num_sat)$QUANTITY, sample_n(w_sun, num_sun)$QUANTITY)
+
+# Randomly sampling within each weekday
+s_qua <- c(sample_n(s_mon, num_mon)$QUANTITY, sample_n(s_tue, num_tue)$QUANTITY, sample_n(s_wed, num_wed)$QUANTITY, sample_n(s_thu, num_thu)$QUANTITY, sample_n(s_fri, num_fri)$QUANTITY, sample_n(s_sat, num_sat)$QUANTITY, sample_n(s_sun, num_sun)$QUANTITY)
+
+#To make a paired comparison test, the difference between summer and winter is found
+d <- s_qua-w_qua
+sum_win_d <- data.frame(s_qua, w_qua, d)
+
+#Testing for normal distribution of the data. 
+ggplot(data = sum_win_d, aes(x = d)) +
+  geom_histogram(binwidth = 1) 
+
+#calculating sd
+(sd_win <-sd(w_qua))
+(sd_sum <-sd(s_qua))
+
+#Making a t-test
+t.test(x = w_qua, y = s_qua, paired = T, var.equal = F)
+
+```
+
+The distribution of the difference in ticket sale between summer and winter is to some extent violating the normal distribution with a long right tail. Also the standard deviation was not the same in the two groups. However, the t-test gave a very small p-value of 2.2e^-16 indicating a significant difference in ticket sale between summer and winter. This is also reinforced by the graphs above.
+
+
+
